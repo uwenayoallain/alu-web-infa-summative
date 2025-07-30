@@ -16,10 +16,18 @@ app.use(helmet({
             styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
             scriptSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", "data:", "https://openweathermap.org"],
+            fontSrc: ["'self'", "https://cdnjs.cloudflare.com"],
             connectSrc: ["'self'"]
         }
     }
 }));
+
+// Add server identification for load balancing
+app.use((req, res, next) => {
+    const serverId = process.env.SERVER_ID || 'unknown';
+    res.setHeader('X-Server-ID', serverId);
+    next();
+});
 
 app.use(cors());
 app.use(express.json());
@@ -332,6 +340,58 @@ app.get('/api/cities/search/:query', validateApiKey, async (req, res) => {
         });
     } catch (error) {
         handleApiError(error, res, 'city search');
+    }
+});
+
+// Reverse geocoding - get city from coordinates
+app.get('/api/location/reverse/:lat/:lon', validateApiKey, async (req, res) => {
+    try {
+        const { lat, lon } = req.params;
+
+        // Validate coordinates
+        const latitude = parseFloat(lat);
+        const longitude = parseFloat(lon);
+
+        if (isNaN(latitude) || isNaN(longitude)) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Invalid coordinates provided'
+            });
+        }
+
+        if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Coordinates out of valid range'
+            });
+        }
+
+        const response = await axios.get(`${GEO_BASE_URL}/reverse`, {
+            params: {
+                lat: latitude,
+                lon: longitude,
+                limit: 1,
+                appid: WEATHER_API_KEY
+            }
+        });
+
+        if (response.data.length === 0) {
+            return res.status(404).json({
+                error: 'Location Not Found',
+                message: 'No city found for the provided coordinates'
+            });
+        }
+
+        const location = response.data[0];
+        res.json({
+            name: location.name,
+            country: location.country,
+            state: location.state,
+            coordinates: [latitude, longitude],
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        handleApiError(error, res, 'reverse geocoding');
     }
 });
 

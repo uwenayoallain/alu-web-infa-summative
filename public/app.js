@@ -17,6 +17,13 @@ class WeatherApp {
 
         // Update time every minute
         setInterval(() => this.updateDateTime(), 60000);
+        
+        // Handle visibility change to pause/resume updates when tab is inactive
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                this.updateDateTime();
+            }
+        });
     }
 
     bindEvents() {
@@ -47,6 +54,25 @@ class WeatherApp {
             }
         });
 
+        // Handle search result clicks with event delegation
+        searchResults.addEventListener('click', (e) => {
+            const searchResult = e.target.closest('.search-result');
+            const favoriteBtn = e.target.closest('.add-favorite');
+            
+            if (favoriteBtn) {
+                // Handle favorite button click
+                e.stopPropagation();
+                const cityName = favoriteBtn.getAttribute('data-city-name');
+                const cityCountry = favoriteBtn.getAttribute('data-city-country');
+                this.toggleFavorite(cityName, cityCountry, favoriteBtn);
+            } else if (searchResult) {
+                // Handle search result click
+                const cityName = searchResult.getAttribute('data-city-name');
+                const cityCountry = searchResult.getAttribute('data-city-country');
+                this.selectCity(cityName, cityCountry);
+            }
+        });
+
         // Retry button
         document.getElementById('retryBtn')?.addEventListener('click', () => {
             if (this.currentCity) {
@@ -59,6 +85,24 @@ class WeatherApp {
             this.clearFavorites();
         });
 
+        // Handle favorite city clicks with event delegation
+        document.getElementById('favoriteCities').addEventListener('click', (e) => {
+            const favoriteCard = e.target.closest('.favorite-card');
+            const removeBtn = e.target.closest('.remove-favorite');
+            
+            if (removeBtn) {
+                // Handle remove favorite button click
+                e.stopPropagation();
+                const cityKey = removeBtn.getAttribute('data-city-key');
+                this.removeFavorite(cityKey);
+            } else if (favoriteCard) {
+                // Handle favorite card click
+                const cityDisplay = favoriteCard.getAttribute('data-city-display');
+                this.loadWeatherData(cityDisplay);
+                this.currentCity = cityDisplay;
+            }
+        });
+
         // Comparison functionality
         document.getElementById('compareBtn').addEventListener('click', () => {
             this.toggleComparison();
@@ -67,6 +111,7 @@ class WeatherApp {
         document.getElementById('startComparison').addEventListener('click', () => {
             this.startComparison();
         });
+
     }
 
     async handleSearchInput(e) {
@@ -117,13 +162,13 @@ class WeatherApp {
             const isFavorited = this.favorites.some(fav => fav.key === cityKey);
 
             return `
-                <div class="search-result" onclick="weatherApp.selectCity('${city.name}', '${city.country}')">
+                <div class="search-result" data-city-name="${city.name}" data-city-country="${city.country}">
                     <div class="result-info">
                         <h4>${city.name}</h4>
                         <p>${city.state ? city.state + ', ' : ''}${city.country}</p>
                     </div>
                     <button class="add-favorite ${isFavorited ? 'favorited' : ''}" 
-                            onclick="event.stopPropagation(); weatherApp.toggleFavorite('${city.name}', '${city.country}', this)">
+                            data-city-name="${city.name}" data-city-country="${city.country}">
                         <i class="fas fa-star"></i>
                     </button>
                 </div>
@@ -184,8 +229,8 @@ class WeatherApp {
         const { location, current } = data;
 
         // Update location info
-        document.getElementById('currentCity').textContent =
-            `${location.name}${location.state ? ', ' + location.state : ''}, ${location.country}`;
+        const cityDisplay = `${location.name}${location.state ? ', ' + location.state : ''}, ${location.country}`;
+        document.getElementById('currentCity').textContent = cityDisplay;
 
         // Update main weather info
         document.getElementById('currentTemp').textContent = current.temperature;
@@ -277,14 +322,14 @@ class WeatherApp {
         }
 
         container.innerHTML = this.favorites.map(city => `
-            <div class="favorite-card" onclick="weatherApp.selectCity('${city.display.replace(/'/g, "\\'")}')">
-                <button class="remove-favorite" onclick="event.stopPropagation(); weatherApp.removeFavorite('${city.key}')">
+            <div class="favorite-card" data-city-display="${city.display}">
+                <button class="remove-favorite" data-city-key="${city.key}">
                     <i class="fas fa-times"></i>
                 </button>
                 <div class="city-name">${city.display}</div>
                 <div class="temp-display">${city.temperature}°C</div>
                 <div class="description">${city.description}</div>
-                <img src="https://openweathermap.org/img/wn/${city.icon}.png" alt="${city.description}" style="width: 40px; height: 40px;">
+                <img src="https://openweathermap.org/img/wn/${city.icon}@2x.png" alt="${city.description}" style="width: 50px; height: 50px;">
             </div>
         `).join('');
     }
@@ -346,7 +391,13 @@ class WeatherApp {
             }
         } catch (error) {
             console.error('Comparison error:', error);
-            alert('Failed to compare cities. Please try again.');
+            const resultsContainer = document.getElementById('comparisonResults');
+            resultsContainer.innerHTML = `
+                <div class="comparison-error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>Failed to compare cities. Please check your internet connection and try again.</p>
+                </div>
+            `;
         }
     }
 
@@ -403,7 +454,10 @@ class WeatherApp {
             hour: '2-digit',
             minute: '2-digit'
         };
-        document.getElementById('currentDate').textContent = now.toLocaleDateString('en-US', options);
+        const dateElement = document.getElementById('currentDate');
+        if (dateElement) {
+            dateElement.textContent = now.toLocaleDateString('en-US', options);
+        }
     }
 
     formatDate(dateString) {
@@ -432,25 +486,70 @@ class WeatherApp {
     async loadDefaultCity() {
         // Try to get user's location
         if (navigator.geolocation) {
+            this.showLoading();
+            
+            const geolocationOptions = {
+                enableHighAccuracy: false,
+                timeout: 10000,
+                maximumAge: 300000 // 5 minutes
+            };
+
             navigator.geolocation.getCurrentPosition(
                 async (position) => {
                     try {
                         const { latitude, longitude } = position.coords;
-                        // You could implement a reverse geocoding endpoint here
-                        // For now, load a default city
-                        await this.loadWeatherData('Toronto');
+                        console.log(`Got coordinates: ${latitude}, ${longitude}`);
+                        
+                        // Get city name from coordinates
+                        const locationResponse = await fetch(`/api/location/reverse/${latitude}/${longitude}`);
+                        
+                        if (locationResponse.ok) {
+                            const locationData = await locationResponse.json();
+                            const cityName = locationData.state ? 
+                                `${locationData.name}, ${locationData.state}, ${locationData.country}` : 
+                                `${locationData.name}, ${locationData.country}`;
+                            
+                            console.log(`Found current location: ${cityName}`);
+                            await this.loadWeatherData(cityName);
+                            this.showLocationMessage(`📍 Showing weather for your current location: ${cityName}`);
+                        } else {
+                            throw new Error('Unable to determine location name');
+                        }
                     } catch (error) {
+                        console.error('Error getting location data:', error);
                         await this.loadWeatherData('Toronto');
+                        this.showLocationMessage('📍 Unable to detect location, showing Toronto weather');
                     }
                 },
-                () => {
-                    // Geolocation failed, load default city
-                    this.loadWeatherData('Toronto');
-                }
+                async (error) => {
+                    console.error('Geolocation error:', error);
+                    let message = '📍 ';
+                    
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            message += 'Location access denied, showing Toronto weather';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            message += 'Location unavailable, showing Toronto weather';
+                            break;
+                        case error.TIMEOUT:
+                            message += 'Location request timed out, showing Toronto weather';
+                            break;
+                        default:
+                            message += 'Unable to get location, showing Toronto weather';
+                            break;
+                    }
+                    
+                    await this.loadWeatherData('Toronto');
+                    this.showLocationMessage(message);
+                },
+                geolocationOptions
             );
         } else {
             // Geolocation not supported, load default city
+            console.log('Geolocation not supported');
             await this.loadWeatherData('Toronto');
+            this.showLocationMessage('📍 Geolocation not supported, showing Toronto weather');
         }
     }
 
@@ -482,6 +581,104 @@ class WeatherApp {
     hideWeatherSections() {
         document.getElementById('currentWeather').classList.add('hidden');
         document.getElementById('forecastSection').classList.add('hidden');
+    }
+
+    showLocationMessage(message) {
+        // Create or update location message
+        let locationMsg = document.getElementById('locationMessage');
+        if (!locationMsg) {
+            locationMsg = document.createElement('div');
+            locationMsg.id = 'locationMessage';
+            locationMsg.className = 'location-message';
+            
+            // Insert after the header
+            const header = document.querySelector('.header');
+            header.insertAdjacentElement('afterend', locationMsg);
+        }
+        
+        locationMsg.textContent = message;
+        locationMsg.classList.remove('hidden');
+        
+        // Auto-hide after 8 seconds
+        setTimeout(() => {
+            if (locationMsg) {
+                locationMsg.classList.add('hidden');
+            }
+        }, 8000);
+    }
+
+    async detectCurrentLocation() {
+        const locationBtn = document.getElementById('locationBtn');
+        
+        if (!navigator.geolocation) {
+            this.showLocationMessage('📍 Geolocation is not supported by this browser');
+            return;
+        }
+
+        // Add loading animation to button
+        locationBtn.classList.add('loading');
+        locationBtn.disabled = true;
+
+        const geolocationOptions = {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 60000 // 1 minute
+        };
+
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                try {
+                    const { latitude, longitude } = position.coords;
+                    console.log(`Manual location detection: ${latitude}, ${longitude}`);
+                    
+                    // Get city name from coordinates
+                    const locationResponse = await fetch(`/api/location/reverse/${latitude}/${longitude}`);
+                    
+                    if (locationResponse.ok) {
+                        const locationData = await locationResponse.json();
+                        const cityName = locationData.state ? 
+                            `${locationData.name}, ${locationData.state}, ${locationData.country}` : 
+                            `${locationData.name}, ${locationData.country}`;
+                        
+                        console.log(`Detected location: ${cityName}`);
+                        await this.loadWeatherData(cityName);
+                        this.showLocationMessage(`📍 Updated to your current location: ${cityName}`);
+                    } else {
+                        throw new Error('Unable to determine location name');
+                    }
+                } catch (error) {
+                    console.error('Error getting location data:', error);
+                    this.showLocationMessage('📍 Unable to determine your location. Please try again.');
+                } finally {
+                    locationBtn.classList.remove('loading');
+                    locationBtn.disabled = false;
+                }
+            },
+            (error) => {
+                console.error('Geolocation error:', error);
+                let message = '📍 ';
+                
+                switch(error.code) {
+                    case error.PERMISSION_DENIED:
+                        message += 'Location access denied. Please enable location permissions.';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        message += 'Location information is unavailable.';
+                        break;
+                    case error.TIMEOUT:
+                        message += 'Location request timed out. Please try again.';
+                        break;
+                    default:
+                        message += 'Unable to retrieve your location.';
+                        break;
+                }
+                
+                this.showLocationMessage(message);
+                locationBtn.classList.remove('loading');
+                locationBtn.disabled = false;
+            },
+            geolocationOptions
+        );
     }
 }
 

@@ -13,8 +13,8 @@ COPY package*.json pnpm-lock.yaml* ./
 # Install pnpm globally
 RUN npm install -g pnpm@latest
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile --prod
+# Install dependencies (all dependencies for flexibility)
+RUN pnpm install --frozen-lockfile
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \

@@ -1,5 +1,5 @@
 services:
-  # Web Server 1 - Node.js Application
+  # Web Server 1
   web01:
     build: .
     container_name: weather-web01
@@ -12,23 +12,20 @@ services:
       - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
     expose:
       - 8084
+    volumes:
+      - ./server.js:/app/server.js
+      - ./public:/app/public
     networks:
       - weather-net
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "const http = require('http'); const PORT = process.env.PORT || 8080; http.get(`http://localhost:$${PORT}/health`, (res) => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }).on('error', () => process.exit(1));",
-        ]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8084/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  # Web Server 2 - Node.js Application
+  # Web Server 2
   web02:
     build: .
     container_name: weather-web02
@@ -41,28 +38,25 @@ services:
       - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
     expose:
       - 8085
+    volumes:
+      - ./server.js:/app/server.js
+      - ./public:/app/public
     networks:
       - weather-net
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "const http = require('http'); const PORT = process.env.PORT || 8080; http.get(`http://localhost:$${PORT}/health`, (res) => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }).on('error', () => process.exit(1));",
-        ]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8085/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  # Load Balancer - HAProxy
+  # Load Balancer
   loadbalancer:
     image: haproxy:2.8-alpine
     container_name: weather-loadbalancer
     ports:
-      - "8086:80"
+      - "8080:80"
     volumes:
       - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     networks:
@@ -74,15 +68,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--quiet",
-          "--tries=1",
-          "--spider",
-          "http://localhost/lb-health",
-        ]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/lb-health"]
       interval: 30s
       timeout: 10s
       retries: 3
