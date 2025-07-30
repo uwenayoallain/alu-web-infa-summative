@@ -1,0 +1,93 @@
+services:
+  # Web Server 1 - Node.js Application
+  web01:
+    build: .
+    container_name: weather-web01
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=8084
+      - SERVER_ID=web01
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+    expose:
+      - 8084
+    networks:
+      - weather-net
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const http = require('http'); const PORT = process.env.PORT || 8080; http.get(`http://localhost:$${PORT}/health`, (res) => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }).on('error', () => process.exit(1));",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Web Server 2 - Node.js Application
+  web02:
+    build: .
+    container_name: weather-web02
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=8085
+      - SERVER_ID=web02
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+    expose:
+      - 8085
+    networks:
+      - weather-net
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const http = require('http'); const PORT = process.env.PORT || 8080; http.get(`http://localhost:$${PORT}/health`, (res) => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }).on('error', () => process.exit(1));",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Load Balancer - HAProxy
+  loadbalancer:
+    image: haproxy:2.8-alpine
+    container_name: weather-loadbalancer
+    ports:
+      - "8086:80"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - weather-net
+    depends_on:
+      web01:
+        condition: service_healthy
+      web02:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost/lb-health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  weather-net:
+    driver: bridge
+    name: weather-network
