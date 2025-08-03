@@ -213,4 +213,4 @@ This project is created for educational purposes as part of a web infrastructure
 - Frontend-backend integration
 - Error handling and user experience design
 
-**Commercial Use**: External API keys required for production deployment. Ensure compliance with OpenWeatherMap terms of service for commercial applications.
+External API keys required for production deployment. Ensure compliance with OpenWeatherMap terms of service for commercial applications.
