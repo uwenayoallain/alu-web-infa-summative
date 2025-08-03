@@ -1,7 +1,8 @@
 # Weather Dashboard 🌤️
-
 A weather application providing real-time weather data, forecasts, and city comparisons with load balancing for high availability. Built with Node.js, Express, and vanilla JavaScript.
 
+## Docker Image
+[Weather-dashboard](https://hub.docker.com/r/uwenayoallain/weather-dashboard)
 ## 🎯 Purpose & Value
 
 This weather dashboard serves practical needs for:
